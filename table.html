@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>เลือกโต๊ะ</title>
+  <style>
+    body {
+      font-family: 'Segoe UI', sans-serif;
+      background: linear-gradient(to bottom right, #FFA500, #FFFFFF);
+      color: #002366;
+      margin: 0;
+      padding: 0;
+    }
+    header {
+      display: flex;
+      justify-content: space-between;
+      padding: 10px 20px;
+    }
+    .btn-nav {
+      padding: 8px 16px;
+      font-size: 1rem;
+      border: none;
+      border-radius: 12px;
+      background-color: #ffffffcc;
+      color: #002366;
+      cursor: pointer;
+    }
+    h1 {
+      text-align: center;
+      margin-top: 10px;
+    }
+    .table-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+      gap: 20px;
+      padding: 20px;
+      margin: auto;
+      max-width: 1000px;
+    }
+    .table-item {
+      background: #fff;
+      border-radius: 16px;
+      box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+      text-align: center;
+      padding: 30px 0 20px 0;
+      font-size: 1.5rem;
+      cursor: pointer;
+      position: relative;
+      transition: transform 0.1s;
+    }
+    .table-item:hover {
+      transform: scale(1.05);
+    }
+    .table-status {
+      font-size: 1rem;
+      margin-top: 10px;
+      color: #fff;
+      padding: 2px 8px;
+      border-radius: 10px;
+      background: #007bff;
+      position: absolute;
+      top: 10px;
+      right: 10px;
+    }
+    .table-item.occupied {
+      background: #ffcdd2;
+      color: #b71c1c;
+    }
+    .table-item.selected {
+      outline: 4px solid #FFA500;
+      box-shadow: 0 0 0 3px #FFD580;
+    }
+    /* Popup */
+    .popup, .confirm-popup {
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      background: white;
+      padding: 20px 30px;
+      border-radius: 20px;
+      z-index: 1002;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.28);
+      text-align: center;
+      min-width: 270px;
+    }
+    .popup-title {
+      font-size: 1.2rem;
+      margin-bottom: 16px;
+    }
+    .popup-btns button {
+      margin: 10px 12px 0 12px;
+      padding: 10px 20px;
+      font-size: 1.05rem;
+      border-radius: 10px;
+      border: none;
+      background: #FFA500;
+      color: #fff;
+      cursor: pointer;
+    }
+    .popup-btns button:last-child {
+      background: #bdbdbd;
+      color: #333;
+    }
+    .overlay {
+      position: fixed;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+      background: rgba(0,0,0,0.37);
+      z-index: 999;
+    }
+    @media (max-width: 600px) {
+      .table-grid {
+        grid-template-columns: repeat(auto-fit, minmax(90px, 1fr));
+        gap: 10px;
+        padding: 10px;
+      }
+      .table-item {
+        font-size: 1.2rem;
+        padding: 16px 0 13px 0;
+      }
+      .popup,.confirm-popup {
+        width: 95%;
+        min-width: unset;
+        padding: 14px 4px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="overlay" id="overlay" style="display:none;" onclick="closePopup()"></div>
+  <header>
+    <button class="btn-nav" onclick="goHome()">← Home</button>
+  </header>
+  <h1>เลือกโต๊ะ</h1>
+  <div class="table-grid" id="tableGrid">กำลังโหลด...</div>
+
+  <!-- Popup ตัวเลือก -->
+  <div class="popup" id="tablePopup" style="display:none;">
+    <div class="popup-title" id="popupTableTitle"></div>
+    <div class="popup-btns">
+      <button onclick="goOrderMenu()">สั่งอาหาร</button>
+      <button onclick="promptPayTable()">ชำระเงิน</button>
+      <button onclick="moveTable()">ย้ายโต๊ะ</button>
+      <button onclick="mergeTable()">รวมโต๊ะ</button>
+      <button onclick="closePopup()">ปิด</button>
+    </div>
+  </div>
+  <!-- Popup ยืนยัน -->
+  <div class="confirm-popup" id="confirmPopup" style="display:none;">
+    <div class="popup-title" id="confirmPopupTitle"></div>
+    <div style="margin-top:10px;">
+      <button id="confirmPopupYes">ตกลง</button>
+      <button onclick="closePopup()">ยกเลิก</button>
+    </div>
+  </div>
+  <script>
+    // สมมติว่ามี 20 โต๊ะ
+    const NUM_TABLES = 20;
+    // สถานะโต๊ะ: { "1": {occupied:true, order: {...}}, ... }
+    let tableStatus = {};
+    let selectedTable = null;
+
+    // โหลดสถานะโต๊ะจาก localStorage (หลายเครื่องจะ sync ได้ถ้าใช้ browser เดียวกัน)
+    function loadTableStatus() {
+      const data = localStorage.getItem("tableStatus");
+      if (data) {
+        tableStatus = JSON.parse(data);
+      }
+    }
+    function saveTableStatus() {
+      localStorage.setItem("tableStatus", JSON.stringify(tableStatus));
+    }
+
+    function renderTables() {
+      const grid = document.getElementById("tableGrid");
+      grid.innerHTML = "";
+      for(let i=1; i<=NUM_TABLES; i++) {
+        const div = document.createElement("div");
+        div.className = "table-item" + (tableStatus[i] && tableStatus[i].occupied ? " occupied" : "");
+        div.dataset.no = i;
+        div.innerHTML = `โต๊ะ ${i}` +
+          (tableStatus[i] && tableStatus[i].occupied
+            ? `<span class="table-status">ไม่ว่าง</span>`
+            : `<span class="table-status" style="background:#43a047;">ว่าง</span>`);
+        div.onclick = ()=>openTablePopup(i);
+        grid.appendChild(div);
+      }
+    }
+    function openTablePopup(tableNo) {
+      selectedTable = tableNo;
+      document.getElementById("popupTableTitle").innerText = `โต๊ะ ${tableNo}`;
+      document.getElementById("tablePopup").style.display = "block";
+      document.getElementById("overlay").style.display = "block";
+    }
+    function closePopup() {
+      document.getElementById("tablePopup").style.display = "none";
+      document.getElementById("confirmPopup").style.display = "none";
+      document.getElementById("overlay").style.display = "none";
+    }
+    function goOrderMenu() {
+      window.location.href = `Ordermenu.html?table=${selectedTable}`;
+    }
+    function promptPayTable() {
+      showConfirmPopup("ยืนยันชำระเงินสำหรับโต๊ะ "+selectedTable, function(){
+        // ชำระเงิน = clear order, set ว่าง
+        if(tableStatus[selectedTable]) {
+          tableStatus[selectedTable].occupied = false;
+          tableStatus[selectedTable].order = null;
+          saveTableStatus();
+          renderTables();
+        }
+        closePopup();
+        alert(`โต๊ะ ${selectedTable} ชำระเงินเรียบร้อยแล้ว`);
+      });
+    }
+    function moveTable() {
+      let target = prompt("ย้ายไปโต๊ะหมายเลขอะไร?");
+      if(!target) return;
+      target = parseInt(target);
+      if(target < 1 || target > NUM_TABLES) { alert("หมายเลขโต๊ะไม่ถูกต้อง"); return; }
+      if(tableStatus[target] && tableStatus[target].occupied) { alert("โต๊ะนี้ไม่ว่าง"); return; }
+      // ย้าย order ไปโต๊ะใหม่
+      if(tableStatus[selectedTable]) {
+        tableStatus[target] = {occupied:true, order:tableStatus[selectedTable].order};
+        tableStatus[selectedTable] = {occupied:false, order:null};
+        saveTableStatus();
+        renderTables();
+        alert(`ย้ายออเดอร์จากโต๊ะ ${selectedTable} ไปโต๊ะ ${target} แล้ว`);
+      }
+      closePopup();
+    }
+    function mergeTable() {
+      let target = prompt("รวมกับโต๊ะหมายเลขอะไร?");
+      if(!target) return;
+      target = parseInt(target);
+      if(target < 1 || target > NUM_TABLES) { alert("หมายเลขโต๊ะไม่ถูกต้อง"); return; }
+      if(!tableStatus[target] || !tableStatus[target].occupied) { alert("โต๊ะปลายทางต้องมีออเดอร์"); return; }
+      if(!tableStatus[selectedTable] || !tableStatus[selectedTable].occupied) { alert("โต๊ะต้นทางไม่มีออเดอร์"); return; }
+      // รวมออเดอร์ (สมมติรวม quantity เฉยๆ)
+      let orderA = tableStatus[selectedTable].order || {};
+      let orderB = tableStatus[target].order || {};
+      for(let k in orderA) {
+        if(orderB[k]) orderB[k].quantity += orderA[k].quantity;
+        else orderB[k] = {...orderA[k]};
+      }
+      tableStatus[target].order = orderB;
+      tableStatus[selectedTable] = {occupied:false, order:null};
+      saveTableStatus();
+      renderTables();
+      alert(`รวมออเดอร์โต๊ะ ${selectedTable} กับโต๊ะ ${target} เรียบร้อย`);
+      closePopup();
+    }
+    function showConfirmPopup(title, onConfirm) {
+      document.getElementById("confirmPopupTitle").innerText = title;
+      document.getElementById("confirmPopup").style.display = "block";
+      document.getElementById("overlay").style.display = "block";
+      document.getElementById("confirmPopupYes").onclick = function() {
+        onConfirm();
+      }
+    }
+    function goHome() {
+      window.location.href = "index.html";
+    }
+    // โหลดข้อมูลสถานะโต๊ะจาก localStorage
+    loadTableStatus();
+    renderTables();
+
+    // Auto-refresh ทุก 10 วินาที เพื่อรองรับหลายเครื่อง
+    setInterval(()=>{
+      loadTableStatus();
+      renderTables();
+    }, 10000);
+
+    // กลับหน้าแรกอัตโนมัติถ้าไม่ขยับ 5 นาที
+    let inactivityTimer = setTimeout(goHome, 5 * 60 * 1000);
+    document.body.addEventListener("click", () => {
+      clearTimeout(inactivityTimer);
+      inactivityTimer = setTimeout(goHome, 5 * 60 * 1000);
+    });
+  </script>
+</body>
+</html>
